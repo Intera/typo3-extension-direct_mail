@@ -61,19 +61,29 @@ class MailFromDraft extends AbstractTask
 
             $draftRecord = BackendUtility::getRecord('sys_dmail', $this->draftUid);
 
+            // update recipients
+            $recipientGroups = explode(",", $draftRecord['recipientGroups']);
+            $SOBE = \TYPO3\CMS\Core\Utility\GeneralUtility::makeInstance( \DirectMailTeam\DirectMail\Module\Dmail::class );
+            $SOBE->init();
+
+            $newRecipients = $SOBE->cmd_compileMailGroup($recipientGroups);
+
             // get some parameters from tsConfig
-            $tsConfig = BackendUtility::getModTSconfig($draftRecord['pid'], 'mod.web_modules.dmail');
-            $defaultParams = $tsConfig['properties'];
+            $defaultParams = BackendUtility::getPagesTSconfig($draftRecord['pid'])['mod.']['web_modules.']['dmail.'] ?? [];
 
             // make a real record out of it
             unset($draftRecord['uid']);
             $draftRecord['tstamp'] = time();
             // set the right type (3 => 1, 2 => 0)
             $draftRecord['type'] -= 2;
+            $draftRecord['query_info'] = serialize($newRecipients['queryInfo']);
 
             // check if domain record is set
-            if ((TYPO3_REQUESTTYPE & TYPO3_REQUESTTYPE_CLI) && (int)$draftRecord['type'] !== 1 && empty($draftRecord['use_domain'])) {
-                throw new \Exception('No domain record set!');
+            if ((TYPO3_REQUESTTYPE & TYPO3_REQUESTTYPE_CLI)
+                && (int)$draftRecord['type'] !== 1
+                && empty(DirectMailUtility::getUrlBase((int)$draftRecord['page']))
+            ) {
+                throw new \Exception('No site found in root line of page ' . $draftRecord['page'] . '!');
             }
 
             // Insert the new dmail record into the DB
@@ -81,12 +91,12 @@ class MailFromDraft extends AbstractTask
             //$this->dmailUid = $GLOBALS['TYPO3_DB']->sql_insert_id();
 
             $connectionPool = GeneralUtility::makeInstance(ConnectionPool::class);
-            $databaseConnectionSysDmailMail = $connectionPool->getConnectionForTable('sys_dmail');
-            $databaseConnectionSysDmailMail->insert(
+            $databaseConnectionSysDamilMail = $connectionPool->getConnectionForTable('sys_dmail');
+            $databaseConnectionSysDamilMail->insert(
                 'sys_dmail',
                 $draftRecord
             );
-            $this->dmailUid = (int)$databaseConnectionSysDmailMail->lastInsertId('sys_dmail');
+            $this->dmailUid = (int)$databaseConnectionSysDamilMail->lastInsertId('sys_dmail');
 
 
             // Call a hook after insertion of the cloned dmail record
@@ -157,7 +167,7 @@ class MailFromDraft extends AbstractTask
     {
         if (is_array($GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS']['direct_mail']['mailFromDraft'])) {
             foreach ($GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS']['direct_mail']['mailFromDraft'] as $hookObj) {
-                $hookObjectInstance = GeneralUtility::getUserObj($hookObj);
+                $hookObjectInstance = GeneralUtility::makeInstance($hookObj);
                 if (!(is_object($hookObjectInstance) && ($hookObjectInstance instanceof MailFromDraftHookInterface))) {
                     throw new \Exception('Hook object for "mailFromDraft" must implement the "MailFromDraftHookInterface"!', 1400866815);
                 }

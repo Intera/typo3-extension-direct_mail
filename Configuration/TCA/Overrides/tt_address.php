@@ -1,5 +1,6 @@
 <?php
-defined('TYPO3_MODE') or die();
+defined('TYPO3_MODE') || die('Access denied.');
+
 
 // tt_address modified
 $ttAddressCols = [
@@ -8,6 +9,7 @@ $ttAddressCols = [
         'exclude' => '1',
         'config' => [
             'type' => 'select',
+            'renderType' => 'selectCheckBox',
             'foreign_table' => 'sys_dmail_category',
             'foreign_table_where' => 'AND sys_dmail_category.l18n_parent=0 AND sys_dmail_category.pid IN (###PAGE_TSCONFIG_IDLIST###) ORDER BY sys_dmail_category.sorting',
             'itemsProcFunc' => 'DirectMailTeam\\DirectMail\\SelectCategories->get_localized_categories',
@@ -18,7 +20,6 @@ $ttAddressCols = [
             'size' => 5,
             'minitems' => 0,
             'maxitems' => 60,
-            'renderMode' => 'checkbox',
             'MM' => 'sys_dmail_ttaddress_category_mm',
         ]
     ],

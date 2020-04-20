@@ -15,6 +15,7 @@ namespace DirectMailTeam\DirectMail;
  */
 
 use TYPO3\CMS\Core\Charset\CharsetConverter;
+use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Restriction\DeletedRestriction;
 use TYPO3\CMS\Core\Utility\ArrayUtility;
@@ -68,8 +69,7 @@ class Importer
         $this->parent = &$pObj;
 
         // get some importer default from pageTS
-        $temp = BackendUtility::getModTSconfig(intval(GeneralUtility::_GP('id')), 'mod.web_modules.dmail.importer');
-        $this->params = $temp['properties'];
+        $this->params = BackendUtility::getPagesTSconfig(GeneralUtility::_GP('id'))['mod.']['web_modules.']['dmail.']['importer.'] ?? [];
     }
 
     /**
@@ -356,8 +356,8 @@ class Importer
                 // header
                 $tblLinesAdd[] = array($this->getLanguageService()->getLL('mailgroup_import_mapping_all_html'), '<input type="checkbox" name="CSV_IMPORT[all_html]" value="1"' . (!$this->indata['all_html']?'':' checked="checked"') . '/> ');
                 // get categories
-                $temp = BackendUtility::getModTSconfig($this->parent->id, 'TCEFORM.sys_dmail_group.select_categories.PAGE_TSCONFIG_IDLIST');
-                if (is_numeric($temp['value'])) {
+                $temp = BackendUtility::getPagesTSconfig($this->parent->id)['TCEFORM.']['sys_dmail_group.']['select_categories.']['PAGE_TSCONFIG_IDLIST'] ?? null;
+                if (is_numeric($temp)) {
                     $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)->getQueryBuilderForTable('sys_dmail_category');
                     $rowCat = $queryBuilder
                         ->select('*')
@@ -365,7 +365,7 @@ class Importer
                         ->where(
                             $queryBuilder->expr()->in(
                                 'pid',
-                                $temp['value']
+                                $temp
                             )
                         )
                         ->execute()
@@ -558,7 +558,7 @@ class Importer
         if (is_array($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['direct_mail/mod3/class.tx_directmail_recipient_list.php']['cmd_displayImport'])) {
             $hookObjectsArr = array();
             foreach ($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['direct_mail/mod3/class.tx_directmail_recipient_list.php']['cmd_displayImport'] as $classRef) {
-                $hookObjectsArr[] = &GeneralUtility::getUserObj($classRef);
+                $hookObjectsArr[] = &GeneralUtility::makeInstance($classRef);
             }
         }
         if (is_array($hookObjectsArr)) {
@@ -795,7 +795,7 @@ class Importer
         if (is_array($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['direct_mail/mod3/class.tx_directmail_recipient_list.php']['doImport'])) {
             $hookObjectsArr = array();
             foreach ($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['direct_mail/mod3/class.tx_directmail_recipient_list.php']['doImport'] as $classRef) {
-                $hookObjectsArr[] = &GeneralUtility::getUserObj($classRef);
+                $hookObjectsArr[] = &GeneralUtility::makeInstance($classRef);
             }
 
             foreach ($hookObjectsArr as $hookObj) {
@@ -895,7 +895,7 @@ class Importer
         $delimiter = ($delimiter === 'comma') ? ',' : $delimiter;
         $delimiter = ($delimiter === 'semicolon') ? ';' : $delimiter;
         $delimiter = ($delimiter === 'colon') ? ':' : $delimiter;
-        $delimiter = ($delimiter === 'tab') ? TAB : $delimiter;
+        $delimiter = ($delimiter === 'tab') ? "\t" : $delimiter;
         $encaps = ($encaps === 'singleQuote') ? "'" : $encaps;
         $encaps = ($encaps === 'doubleQuote') ? '"' : $encaps;
         while (($data = fgetcsv($handle, 10000, $delimiter, $encaps)) !== false) {
@@ -925,8 +925,8 @@ class Importer
 
         $mydata = array();
         // TYPO3 6.0 works with relative path, we need absolute here
-        if (!is_file($this->indata['newFile']) && (strpos($this->indata['newFile'], PATH_site) === false)) {
-            $this->indata['newFile'] = PATH_site . $this->indata['newFile'];
+        if (!is_file($this->indata['newFile']) && (strpos($this->indata['newFile'], Environment::getPublicPath() . '/') === false)) {
+            $this->indata['newFile'] = Environment::getPublicPath() . '/' . $this->indata['newFile'];
         }
         $handle = fopen($this->indata['newFile'], 'r');
         $i = 0;
@@ -935,7 +935,7 @@ class Importer
         $delimiter = ($delimiter === 'comma') ? ',' : $delimiter;
         $delimiter = ($delimiter === 'semicolon') ? ';' : $delimiter;
         $delimiter = ($delimiter === 'colon') ? ':' : $delimiter;
-        $delimiter = ($delimiter === 'tab') ? TAB : $delimiter;
+        $delimiter = ($delimiter === 'tab') ? "\t" : $delimiter;
         $encaps = ($encaps === 'singleQuote') ? "'" : $encaps;
         $encaps = ($encaps === 'doubleQuote') ? '"' : $encaps;
         while ((($data = fgetcsv($handle, 10000, $delimiter, $encaps)) !== false)) {

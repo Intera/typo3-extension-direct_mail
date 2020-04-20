@@ -14,11 +14,13 @@ namespace DirectMailTeam\DirectMail\Module;
  * The TYPO3 project - inspiring people to share!
  */
 
+use DirectMailTeam\DirectMail\MailSelect;
+use TYPO3\CMS\Backend\Routing\Exception\RouteNotFoundException;
+use TYPO3\CMS\Backend\Routing\UriBuilder;
+use TYPO3\CMS\Core\Http\HtmlResponse;
 use TYPO3\CMS\Core\Imaging\Icon;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use TYPO3\CMS\Core\Imaging\IconFactory;
-use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\CMS\Core\Messaging\FlashMessage;
@@ -39,7 +41,7 @@ use TYPO3\CMS\Core\Utility\CsvUtility;
  * @package 	TYPO3
  * @subpackage	tx_directmail
  */
-class RecipientList extends \TYPO3\CMS\Backend\Module\BaseScriptClass
+class RecipientList extends BaseScriptClass
 {
     public $fieldList = 'uid,name,first_name,middle_name,last_name,title,email,phone,www,address,company,city,zip,country,fax,module_sys_dmail_category,module_sys_dmail_html';
     // Internal
@@ -67,7 +69,7 @@ class RecipientList extends \TYPO3\CMS\Backend\Module\BaseScriptClass
     /**
      * Query generator
      *
-     * @var \DirectMailTeam\DirectMail\MailSelect
+     * @var MailSelect
      */
     public $queryGenerator;
     public $MCONF;
@@ -92,79 +94,35 @@ class RecipientList extends \TYPO3\CMS\Backend\Module\BaseScriptClass
      */
     public function __construct()
     {
-        $this->MCONF = array(
-                'name' => $this->moduleName
-        );
+        $this->MCONF = [
+            'name' => $this->moduleName
+        ];
     }
 
     /**
-     * First initialization of global variables
+     * Initialization
      *
      * @return	void
      */
     public function init()
     {
         parent::init();
-
-        // initialize IconFactory
-        $this->iconFactory = GeneralUtility::makeInstance(IconFactory::class);
-
-        $temp = BackendUtility::getModTSconfig($this->id, 'mod.web_modules.dmail');
-        if (!is_array($temp['properties'])) {
-            $temp['properties'] = array();
-        }
-        $this->params = $temp['properties'];
-        $this->implodedParams = DirectMailUtility::implodeTSParams($this->params);
-        if ($this->params['userTable'] && is_array($GLOBALS['TCA'][$this->params['userTable']])) {
-            $this->userTable = $this->params['userTable'];
-            $this->allowedTables[] = $this->userTable;
-        }
-        $this->MOD_MENU['dmail_mode'] = BackendUtility::unsetMenuItems($this->params, $this->MOD_MENU['dmail_mode'], 'menu.dmail_mode');
-
         // initialize the query generator
-        $this->queryGenerator = GeneralUtility::makeInstance('DirectMailTeam\\DirectMail\\MailSelect');
-
-        // initialize backend user language
-        if ($this->getLanguageService()->lang && ExtensionManagementUtility::isLoaded('static_info_tables')) {
-            $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
-                ->getQueryBuilderForTable('sys_language');
-            $res = $queryBuilder
-                ->select('sys_language.uid')
-                ->from('sys_language')
-                ->leftJoin(
-                    'sys_language',
-                    'static_languages',
-                    'static_languages',
-                    $queryBuilder->expr()->eq('sys_language.static_lang_isocode', $queryBuilder->quoteIdentifier('static_languages.uid'))
-                )
-                ->where(
-                    $queryBuilder->expr()->eq('static_languages.lg_typo3', $queryBuilder->createNamedParameter($this->getLanguageService()->lang))
-                )
-                ->execute()
-                ->fetchAll();
-
-            foreach ($res as $row) {
-                $this->sys_language_uid = $row['uid'];
-            }
-
-        }
-        // load contextual help
-        $this->cshTable = '_MOD_' . $this->MCONF['name'];
-        if ($GLOBALS['BE_USER']->uc['edit_showFieldHelp']) {
-            $this->getLanguageService()->loadSingleTableDescription($this->cshTable);
-        }
+        $this->queryGenerator = GeneralUtility::makeInstance(MailSelect::class);
     }
 
     /**
      * Entrance from the backend module. This replace the _dispatch
      *
      * @param ServerRequestInterface $request The request object from the backend
-     * @param ResponseInterface $response The reponse object sent to the backend
      *
      * @return ResponseInterface Return the response object
      */
-    public function mainAction(ServerRequestInterface $request, ResponseInterface $response)
+    public function mainAction(ServerRequestInterface $request) : ResponseInterface
     {
+        /** @var ResponseInterface $response */
+        $response = func_num_args() === 2 ? func_get_arg(1) : null;
+
         $this->getLanguageService()->includeLLFile('EXT:direct_mail/Resources/Private/Language/locallang_mod2-6.xlf');
         $this->getLanguageService()->includeLLFile('EXT:direct_mail/Resources/Private/Language/locallang_csh_sysdmail.xlf');
 
@@ -173,7 +131,12 @@ class RecipientList extends \TYPO3\CMS\Backend\Module\BaseScriptClass
         $this->main();
         $this->printContent();
 
-        $response->getBody()->write($this->content);
+        if ($response !== null) {
+            $response->getBody()->write($this->content);
+        } else {
+            // Behaviour in TYPO3 v9
+            $response = new HtmlResponse($this->content);
+        }
         return $response;
     }
 
@@ -328,6 +291,7 @@ class RecipientList extends \TYPO3\CMS\Backend\Module\BaseScriptClass
      * Shows the existing recipient lists and shows link to create a new one or import a list
      *
      * @return string List of existing recipient list, link to create a new list and link to import
+     * @throws RouteNotFoundException If the named route doesn't exist
      */
     public function showExistingRecipientLists()
     {
@@ -398,7 +362,16 @@ class RecipientList extends \TYPO3\CMS\Backend\Module\BaseScriptClass
             $out;
 
         // Import
-        $out = '<a class="t3-link" href="' . BackendUtility::getModuleUrl('DirectMailNavFrame_RecipientList') . '&id=' . $this->id . '&CMD=displayImport">' . $this->getLanguageService()->getLL('recip_import_mailgroup_msg') . '</a>';
+        /** @var UriBuilder $uriBuilder */
+        $uriBuilder = GeneralUtility::makeInstance(UriBuilder::class);
+        $moduleUrl = $uriBuilder->buildUriFromRoute(
+            $this->moduleName,
+            [
+                'id' => $this->id,
+                'CMD' => 'displayImport'
+            ]
+        );
+        $out = '<a class="t3-link" href="' . $moduleUrl . '">' . $this->getLanguageService()->getLL('recip_import_mailgroup_msg') . '</a>';
         $theOutput.= '<div style="padding-top: 20px;"></div>';
         $theOutput.= '<h3>' . $this->getLanguageService()->getLL('mailgroup_import') . '</h3>' . $out;
         return $theOutput;
@@ -435,10 +408,22 @@ class RecipientList extends \TYPO3\CMS\Backend\Module\BaseScriptClass
      * @param int $uid Uid of the recipient link
      *
      * @return string The link
+     * @throws RouteNotFoundException If the named route doesn't exist
      */
     public function linkRecip_record($str, $uid)
     {
-        return '<a href="' . BackendUtility::getModuleUrl('DirectMailNavFrame_RecipientList') . '&id=' . $this->id . '&CMD=displayMailGroup&group_uid=' . $uid . '&SET[dmail_mode]=recip">' . $str . '</a>';
+        /** @var UriBuilder $uriBuilder */
+        $uriBuilder = GeneralUtility::makeInstance(UriBuilder::class);
+        $moduleUrl = $uriBuilder->buildUriFromRoute(
+            $this->moduleName,
+            [
+                'id' => $this->id,
+                'group_uid' => $uid,
+                'CMD' => 'displayMailGroup',
+                'SET[dmail_mode]' => 'recip'
+            ]
+        );
+        return '<a href="' . $moduleUrl . '">' . $str . '</a>';
     }
 
     /**
@@ -573,7 +558,7 @@ class RecipientList extends \TYPO3\CMS\Backend\Module\BaseScriptClass
             $hookObjectsArr = array();
 
             foreach ($GLOBALS['TYPO3_CONF_VARS']['EXTCONF']['direct_mail']['mod3']['cmd_compileMailGroup'] as $classRef) {
-                $hookObjectsArr[] = &GeneralUtility::getUserObj($classRef);
+                $hookObjectsArr[] = &GeneralUtility::makeInstance($classRef);
             }
             foreach ($hookObjectsArr as $hookObj) {
                 if (method_exists($hookObj, 'cmd_compileMailGroup_postProcess')) {
